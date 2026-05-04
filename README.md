@@ -14,14 +14,14 @@ only downloads ~35 GB instead of the full 134 GB.
 │  HF Job (cpu-xl, 16 vCPU, no GPU needed)                       │
 │                                                                 │
 │  1. Mount source GGUF repo as read-only volume (instant)        │
-│  2. Clone mesh-llm from GitHub, build llama-model-slice (~5 min)│
+│  2. Clone mesh-llm from GitHub, build skippy-model-package (~5m)│
 │  3. Split GGUF into per-layer files (~1 GB/min throughput)      │
 │  4. Validate tensor coverage                                    │
 │  5. Upload layer package to target HF repo                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-The splitter (`llama-model-slice`) is built from the
+The splitter (`skippy-model-package`) is built from the
 [mesh-llm](https://github.com/Mesh-LLM/mesh-llm) repo which includes it as a
 workspace crate (see [PR #422](https://github.com/Mesh-LLM/mesh-llm/pull/422)).
 The job clones the repo directly from GitHub — no local checkout needed.
@@ -185,7 +185,7 @@ currently supports these architectures:
 
 ## How the splitter is built
 
-The `llama-model-slice` binary is built from the mesh-llm workspace. It links
+The `skippy-model-package` binary is built from the mesh-llm workspace. It links
 against a patched llama.cpp that understands GGUF tensor structure and can
 decompose a model into per-layer files with correct metadata.
 
@@ -193,7 +193,7 @@ The HF Job builds it from source inside the container:
 1. Clones mesh-llm from GitHub (`jd/feat/skippy` branch / PR #422)
 2. Runs `scripts/prepare-llama.sh` to clone + patch llama.cpp
 3. Runs `scripts/build-llama.sh` to compile the C++ static libraries
-4. Runs `cargo build --release -p llama-model-slice` to build the Rust binary
+4. Runs `cargo build --release -p skippy-model-package` to build the Rust binary
 
 Total build time: ~5 minutes on cpu-xl (16 vCPU).
 Once PR #422 merges, set `MESH_LLM_REF=main` (or leave it — the default will be updated).

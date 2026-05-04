@@ -33,20 +33,35 @@ echo "=== [2/7] Installing Rust ==="
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y > /dev/null 2>&1
 source /root/.cargo/env
 
-echo "=== [3/7] Cloning mesh-llm and building llama-model-slice ==="
+echo "=== [3/7] Cloning mesh-llm and building skippy-model-package ==="
 git clone --depth 1 --branch "$MESH_LLM_REF" \
     https://github.com/Mesh-LLM/mesh-llm.git /tmp/build
 cd /tmp/build
 
 # Full clone needed for git-am patches in prepare-llama
 sed -i 's/--filter=blob:none //' scripts/prepare-llama.sh
-scripts/prepare-llama.sh pinned > /dev/null 2>&1
-scripts/build-llama.sh > /dev/null 2>&1
+echo "  Running prepare-llama.sh..."
+scripts/prepare-llama.sh pinned 2>&1 | tail -5
+echo "  Running build-llama.sh..."
+scripts/build-llama.sh 2>&1 | tail -5
+
+# Locate the llama.cpp build directory (build-llama.sh puts it here)
+LLAMA_BUILD_DIR=".deps/llama-build/build-stage-abi-cpu"
+echo "  Verifying llama.cpp build at $LLAMA_BUILD_DIR..."
+find "$LLAMA_BUILD_DIR" -name "*.a" 2>/dev/null | head -10 || echo "  WARNING: no .a files found"
 
 # Build the splitter binary
-SKIPPY_LLAMA_BUILD_DIR=.deps/llama.cpp/build-stage-abi-static \
-    cargo build --release -p llama-model-slice 2>&1 | tail -3
-SLICER=/tmp/build/target/release/llama-model-slice
+echo "  Building skippy-model-package..."
+SKIPPY_LLAMA_BUILD_DIR="$LLAMA_BUILD_DIR" \
+    cargo build --release -p skippy-model-package 2>&1 | tail -20
+SLICER=/tmp/build/target/release/skippy-model-package
+if [ ! -f "$SLICER" ]; then
+    echo "ERROR: Build failed — binary not found at $SLICER"
+    echo "Retrying with full output..."
+    SKIPPY_LLAMA_BUILD_DIR=.deps/llama.cpp/build-stage-abi-static \
+        cargo build --release -p skippy-model-package 2>&1
+    exit 1
+fi
 echo "  ✓ Built: $SLICER"
 
 # ─── Split ────────────────────────────────────────────────────────────────
