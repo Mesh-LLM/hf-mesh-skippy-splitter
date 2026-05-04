@@ -14,7 +14,7 @@ only downloads ~35 GB instead of the full 134 GB.
 │  HF Job (cpu-xl, 16 vCPU, no GPU needed)                       │
 │                                                                 │
 │  1. Mount source GGUF repo as read-only volume (instant)        │
-│  2. Build llama-model-slice from mesh-llm source (~5 min)       │
+│  2. Clone mesh-llm from GitHub, build llama-model-slice (~5 min)│
 │  3. Split GGUF into per-layer files (~1 GB/min throughput)      │
 │  4. Validate tensor coverage                                    │
 │  5. Upload layer package to target HF repo                      │
@@ -24,6 +24,7 @@ only downloads ~35 GB instead of the full 134 GB.
 The splitter (`llama-model-slice`) is built from the
 [mesh-llm](https://github.com/Mesh-LLM/mesh-llm) repo which includes it as a
 workspace crate (see [PR #422](https://github.com/Mesh-LLM/mesh-llm/pull/422)).
+The job clones the repo directly from GitHub — no local checkout needed.
 
 ## Quick start
 
@@ -31,10 +32,7 @@ workspace crate (see [PR #422](https://github.com/Mesh-LLM/mesh-llm/pull/422)).
 # 1. Set your HF token (needs write access to target org)
 export HF_TOKEN="hf_..."
 
-# 2. One-time: upload the mesh-llm source tarball to a bucket
-./scripts/prepare-source.sh
-
-# 3. Split a model
+# 2. Split a model
 ./scripts/run-split-job.sh \
   unsloth/Qwen3-235B-A22B-GGUF \
   "UD-Q4_K_XL/Qwen3-235B-A22B-UD-Q4_K_XL-00001-of-00003.gguf" \
@@ -48,7 +46,6 @@ and the result is published to the target repo.
 
 - [HF CLI](https://huggingface.co/docs/huggingface_hub/en/guides/cli) (`pip install huggingface_hub[cli]`)
 - `HF_TOKEN` with write access to the target org/repo
-- The mesh-llm source tarball uploaded to a HF bucket (one-time setup)
 
 ## Usage
 
@@ -65,6 +62,13 @@ and the result is published to the target repo.
 
 For sharded GGUFs (multiple files), point `source_file` at the **first shard**
 (`-00001-of-NNNNN.gguf`). The splitter finds siblings automatically.
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `HF_TOKEN` | (required) | HuggingFace token with write access |
+| `MESH_LLM_REF` | `jd/feat/skippy` | Git ref to build from (switch to `main` once PR #422 merges) |
 
 ## Examples
 
@@ -125,8 +129,7 @@ Tested across 2 machines (Mac Studio M3 Ultra 256 GB + M4 Max 64 GB) at **16 tok
 | 200 GB | ~20 min | ~15 min | ~60 min | ~$1.00 |
 | 350 GB | ~35 min | ~25 min | ~90 min | ~$1.50 |
 
-Build time (~5 min) is included in the first run. Subsequent runs reuse the
-cached binary if the bucket source hasn't changed.
+Build time (~5 min) is included. The clone + build happens fresh each run.
 
 ## Output format
 
@@ -187,9 +190,10 @@ against a patched llama.cpp that understands GGUF tensor structure and can
 decompose a model into per-layer files with correct metadata.
 
 The HF Job builds it from source inside the container:
-1. Extracts the mesh-llm source tarball from the bucket
+1. Clones mesh-llm from GitHub (`jd/feat/skippy` branch / PR #422)
 2. Runs `scripts/prepare-llama.sh` to clone + patch llama.cpp
 3. Runs `scripts/build-llama.sh` to compile the C++ static libraries
 4. Runs `cargo build --release -p llama-model-slice` to build the Rust binary
 
 Total build time: ~5 minutes on cpu-xl (16 vCPU).
+Once PR #422 merges, set `MESH_LLM_REF=main` (or leave it — the default will be updated).

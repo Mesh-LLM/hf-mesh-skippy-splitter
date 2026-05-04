@@ -2,14 +2,16 @@
 set -euo pipefail
 
 # This script runs inside an HF Job container.
-# It builds the splitter, splits the model, validates, and publishes.
+# It clones mesh-llm, builds the splitter, splits the model, validates, and publishes.
 #
 # Environment variables (set by run-split-job.sh):
 #   SOURCE_REPO, SOURCE_FILE, TARGET_REPO, MODEL_ID, SOURCE_REVISION, HF_TOKEN
+#   MESH_LLM_REF — git ref to build from (default: jd/feat/skippy, then main once merged)
 #
 # Volumes:
 #   /source  — source GGUF repo (read-only mount)
-#   /bucket  — bucket with this script + mesh-llm source tarball
+
+MESH_LLM_REF="${MESH_LLM_REF:-jd/feat/skippy}"
 
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║  Layer Package Split Job                                 ║"
@@ -17,6 +19,7 @@ echo "╠═══════════════════════�
 echo "║  Source: ${SOURCE_REPO}/${SOURCE_FILE}"
 echo "║  Target: ${TARGET_REPO}"
 echo "║  Model:  ${MODEL_ID}"
+echo "║  Build:  mesh-llm @ ${MESH_LLM_REF}"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -30,11 +33,12 @@ echo "=== [2/7] Installing Rust ==="
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y > /dev/null 2>&1
 source /root/.cargo/env
 
-echo "=== [3/7] Building llama-model-slice ==="
-mkdir -p /tmp/build && tar xzf /bucket/source.tar.gz -C /tmp/build
+echo "=== [3/7] Cloning mesh-llm and building llama-model-slice ==="
+git clone --depth 1 --branch "$MESH_LLM_REF" \
+    https://github.com/Mesh-LLM/mesh-llm.git /tmp/build
 cd /tmp/build
 
-# Full clone needed for git-am patches
+# Full clone needed for git-am patches in prepare-llama
 sed -i 's/--filter=blob:none //' scripts/prepare-llama.sh
 scripts/prepare-llama.sh pinned > /dev/null 2>&1
 scripts/build-llama.sh > /dev/null 2>&1
