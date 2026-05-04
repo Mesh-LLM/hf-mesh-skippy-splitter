@@ -53,24 +53,27 @@ echo ""
 
 # Upload the split script to the bucket (the job needs to run it)
 echo "Uploading job script to bucket..."
-hf bucket upload "$BUCKET" "$SCRIPT_DIR/split-model-job.sh" split-model-job.sh 2>/dev/null
+hf buckets cp "$SCRIPT_DIR/split-model-job.sh" "hf://buckets/$BUCKET/split-model-job.sh"
 
 echo "Submitting HF Job (cpu-xl, ~\$1/hr)..."
 echo ""
 
 hf jobs run \
+    --namespace meshllm \
     --flavor cpu-xl \
-    --timeout 10800 \
-    --env "SOURCE_REPO=$SOURCE_REPO" \
-    --env "SOURCE_FILE=$SOURCE_FILE" \
-    --env "TARGET_REPO=$TARGET_REPO" \
-    --env "MODEL_ID=$MODEL_ID" \
-    --env "SOURCE_REVISION=main" \
-    --env "MESH_LLM_REF=$MESH_LLM_REF" \
-    --env "HF_TOKEN=$HF_TOKEN" \
-    --volume "$SOURCE_REPO:/source:ro" \
-    --volume "$BUCKET:/bucket:ro" \
-    -- bash /bucket/split-model-job.sh
+    --timeout 3h \
+    -d \
+    -e "SOURCE_REPO=$SOURCE_REPO" \
+    -e "SOURCE_FILE=$SOURCE_FILE" \
+    -e "TARGET_REPO=$TARGET_REPO" \
+    -e "MODEL_ID=$MODEL_ID" \
+    -e "SOURCE_REVISION=main" \
+    -e "MESH_LLM_REF=$MESH_LLM_REF" \
+    --secrets "HF_TOKEN" \
+    -v "hf://$SOURCE_REPO:/source:ro" \
+    -v "hf://buckets/$BUCKET:/bucket:ro" \
+    ubuntu:22.04 \
+    bash /bucket/split-model-job.sh
 
 echo ""
 echo "Job submitted!"
