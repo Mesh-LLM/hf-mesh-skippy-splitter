@@ -130,9 +130,100 @@ print(f'    Layers: {manifest["layer_count"]}')
 print(f'    Schema: {manifest["schema_version"]}')
 PYTHON
 
+# ─── Update catalog ───────────────────────────────────────────────────────
+echo ""
+echo "=== [7/8] Updating meshllm/catalog ==="
+/tmp/venv/bin/python3 << 'PYTHON'
+from huggingface_hub import HfApi
+import os, json, tempfile
+
+api = HfApi(token=os.environ['HF_TOKEN'])
+source_repo = os.environ['SOURCE_REPO']
+target_repo = os.environ['TARGET_REPO']
+source_file = os.environ['SOURCE_FILE']
+source_revision = os.environ.get('SOURCE_REVISION', 'main')
+model_id = os.environ.get('MODEL_ID', '')
+
+# Read manifest for metadata
+manifest = json.load(open('/tmp/package/model-package.json'))
+layer_count = manifest['layer_count']
+
+# Determine catalog entry path: entries/<owner>/<repo-name>.json
+owner, repo_name = source_repo.split('/', 1)
+entry_path = f"entries/{owner}/{repo_name}.json"
+
+# Try to fetch existing entry
+catalog_repo = "meshllm/catalog"
+try:
+    existing_path = api.hf_hub_download(
+        repo_id=catalog_repo,
+        filename=entry_path,
+        repo_type="dataset",
+    )
+    entry = json.load(open(existing_path))
+except Exception:
+    # Create new entry
+    entry = {"schema_version": 1, "variants": []}
+
+# Build variant name from source file path
+variant_name = model_id or source_file.split('/')[-1].replace('.gguf', '')
+
+# Check if this variant already exists
+existing_variant = None
+for v in entry.get("variants", []):
+    if v.get("curated", {}).get("name") == variant_name:
+        existing_variant = v
+        break
+
+package_entry = {
+    "type": "layer-package",
+    "repo": target_repo,
+    "layer_count": layer_count,
+}
+
+if existing_variant:
+    # Update packages list
+    packages = existing_variant.get("packages", [])
+    # Remove existing layer-package for same repo if present
+    packages = [p for p in packages if p.get("repo") != target_repo]
+    packages.append(package_entry)
+    existing_variant["packages"] = packages
+else:
+    # Add new variant
+    entry["variants"].append({
+        "source": {
+            "repo": source_repo,
+            "file": source_file,
+            "revision": source_revision,
+        },
+        "curated": {
+            "name": variant_name,
+            "size": f"{layer_count} layers",
+            "description": f"Layer package for {model_id}",
+        },
+        "packages": [package_entry],
+    })
+
+# Write and upload
+with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    json.dump(entry, f, indent=2)
+    tmp_path = f.name
+
+api.upload_file(
+    repo_id=catalog_repo,
+    path_or_fileobj=tmp_path,
+    path_in_repo=entry_path,
+    repo_type="dataset",
+    commit_message=f"Add layer package for {model_id} ({target_repo})",
+)
+print(f"  ✓ Catalog updated: {catalog_repo}/{entry_path}")
+print(f"    Variant: {variant_name}")
+print(f"    Package: {target_repo} ({layer_count} layers)")
+PYTHON
+
 # ─── Summary ──────────────────────────────────────────────────────────────
 echo ""
-echo "=== [7/7] Done ==="
+echo "=== [8/8] Done ==="
 echo ""
 echo "  Published:  https://huggingface.co/${TARGET_REPO}"
 echo "  Layers:     ${LAYER_COUNT}"
