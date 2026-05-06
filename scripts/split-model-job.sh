@@ -242,9 +242,85 @@ print(f"    Variant: {variant_name}")
 print(f"    Package: {target_repo} ({layer_count} layers)")
 PYTHON
 
+# ─── Model Card ────────────────────────────────────────────────────────────
+echo ""
+echo "=== [8/9] Uploading model card ==="
+ACTIVATION_WIDTH=$(python3 -c "import json; m=json.load(open('/tmp/package/model-package.json')); print(m.get('activation_width', 'unknown'))")
+
+cat > /tmp/README.md << EOF
+---
+library_name: mesh-llm
+base_model: ${SOURCE_REPO}
+tags:
+- mesh-llm
+- layer-package
+- skippy
+- distributed-inference
+---
+
+# ${MODEL_ID} — Layer Package for Mesh LLM
+
+Pre-split layer package for distributed inference with [Mesh LLM](https://github.com/Mesh-LLM/mesh-llm).
+
+**Source model:** [${SOURCE_REPO}](https://huggingface.co/${SOURCE_REPO})
+
+## Details
+
+| Property | Value |
+|---|---|
+| **Source** | [${SOURCE_REPO}](https://huggingface.co/${SOURCE_REPO}) |
+| **Source file** | \`${SOURCE_FILE}\` |
+| **Layers** | ${LAYER_COUNT} |
+| **Total size** | ${TOTAL_SIZE} |
+| **Activation width** | ${ACTIVATION_WIDTH} |
+| **Format** | Per-layer GGUF (layer-package) |
+
+## Usage
+
+\`\`\`bash
+# Each node downloads only its assigned layers:
+mesh-llm serve --model "hf://${TARGET_REPO}" --split
+\`\`\`
+
+Nodes discover each other on the local network, plan the topology based on available RAM, and each downloads only its portion.
+
+## Structure
+
+\`\`\`
+model-package.json          # Manifest (layer count, checksums, metadata)
+shared/metadata.gguf        # Model metadata & vocabulary
+shared/embeddings.gguf      # Token embedding weights
+shared/output.gguf          # Output head weights
+layers/layer-000.gguf       # Per-layer transformer weights
+layers/layer-001.gguf
+...
+layers/layer-$(printf "%03d" $((LAYER_COUNT - 1))).gguf
+\`\`\`
+
+## Links
+
+- **Source model:** [${SOURCE_REPO}](https://huggingface.co/${SOURCE_REPO})
+- [Mesh LLM](https://github.com/Mesh-LLM/mesh-llm) — distributed inference runtime
+- [Splitter tool](https://github.com/Mesh-LLM/hf-mesh-skippy-splitter) — HF Jobs layer splitter
+- [Model catalog](https://huggingface.co/datasets/meshllm/catalog) — registry of available packages
+EOF
+
+/tmp/venv/bin/python3 -c "
+from huggingface_hub import HfApi
+import os
+api = HfApi(token=os.environ['HF_TOKEN'])
+api.upload_file(
+    path_or_fileobj='/tmp/README.md',
+    path_in_repo='README.md',
+    repo_id=os.environ['TARGET_REPO'],
+    repo_type='model',
+)
+print('  ✓ Model card uploaded')
+"
+
 # ─── Summary ──────────────────────────────────────────────────────────────
 echo ""
-echo "=== [8/8] Done ==="
+echo "=== [9/9] Done ==="
 echo ""
 echo "  Published:  https://huggingface.co/${TARGET_REPO}"
 echo "  Layers:     ${LAYER_COUNT}"
