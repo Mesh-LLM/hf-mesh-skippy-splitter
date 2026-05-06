@@ -6,12 +6,12 @@ set -euo pipefail
 #
 # Environment variables (set by run-split-job.sh):
 #   SOURCE_REPO, SOURCE_FILE, TARGET_REPO, MODEL_ID, SOURCE_REVISION, HF_TOKEN
-#   MESH_LLM_REF — git ref to build from (default: jd/feat/skippy, then main once merged)
+#   MESH_LLM_REF — git ref to build from (default: main)
 #
 # Volumes:
 #   /source  — source GGUF repo (read-only mount)
 
-MESH_LLM_REF="${MESH_LLM_REF:-jd/feat/skippy}"
+MESH_LLM_REF="${MESH_LLM_REF:-main}"
 
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║  Layer Package Split Job                                 ║"
