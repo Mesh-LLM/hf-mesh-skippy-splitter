@@ -168,41 +168,62 @@ except Exception:
 # Build variant name from source file path
 variant_name = model_id or source_file.split('/')[-1].replace('.gguf', '')
 
-# Check if this variant already exists
-existing_variant = None
-for v in entry.get("variants", []):
-    if v.get("curated", {}).get("name") == variant_name:
-        existing_variant = v
-        break
-
 package_entry = {
     "type": "layer-package",
     "repo": target_repo,
     "layer_count": layer_count,
 }
 
-if existing_variant:
-    # Update packages list
-    packages = existing_variant.get("packages", [])
-    # Remove existing layer-package for same repo if present
-    packages = [p for p in packages if p.get("repo") != target_repo]
-    packages.append(package_entry)
-    existing_variant["packages"] = packages
+# Handle both dict-style and list-style variants
+variants = entry.get("variants", {})
+if isinstance(variants, dict):
+    # Dict-keyed by variant name (existing catalog format)
+    if variant_name in variants:
+        packages = variants[variant_name].get("packages", [])
+        packages = [p for p in packages if p.get("repo") != target_repo]
+        packages.append(package_entry)
+        variants[variant_name]["packages"] = packages
+    else:
+        variants[variant_name] = {
+            "source": {
+                "repo": source_repo,
+                "file": source_file,
+                "revision": source_revision,
+            },
+            "curated": {
+                "name": variant_name,
+                "size": f"{layer_count} layers",
+                "description": f"Layer package for {model_id}",
+            },
+            "packages": [package_entry],
+        }
+    entry["variants"] = variants
 else:
-    # Add new variant
-    entry["variants"].append({
-        "source": {
-            "repo": source_repo,
-            "file": source_file,
-            "revision": source_revision,
-        },
-        "curated": {
-            "name": variant_name,
-            "size": f"{layer_count} layers",
-            "description": f"Layer package for {model_id}",
-        },
-        "packages": [package_entry],
-    })
+    # List-style (fallback)
+    existing_variant = None
+    for v in variants:
+        if v.get("curated", {}).get("name") == variant_name:
+            existing_variant = v
+            break
+    if existing_variant:
+        packages = existing_variant.get("packages", [])
+        packages = [p for p in packages if p.get("repo") != target_repo]
+        packages.append(package_entry)
+        existing_variant["packages"] = packages
+    else:
+        variants.append({
+            "source": {
+                "repo": source_repo,
+                "file": source_file,
+                "revision": source_revision,
+            },
+            "curated": {
+                "name": variant_name,
+                "size": f"{layer_count} layers",
+                "description": f"Layer package for {model_id}",
+            },
+            "packages": [package_entry],
+        })
 
 # Write and upload
 with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
