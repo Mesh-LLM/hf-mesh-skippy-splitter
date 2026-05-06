@@ -68,7 +68,7 @@ For sharded GGUFs (multiple files), point `source_file` at the **first shard**
 | Variable | Default | Description |
 |---|---|---|
 | `HF_TOKEN` | (required) | HuggingFace token with write access |
-| `MESH_LLM_REF` | `jd/feat/skippy` | Git ref to build from (switch to `main` once PR #422 merges) |
+| `MESH_LLM_REF` | `main` | Git ref to build from |
 
 ## Examples
 
@@ -190,10 +190,10 @@ against a patched llama.cpp that understands GGUF tensor structure and can
 decompose a model into per-layer files with correct metadata.
 
 The HF Job builds it from source inside the container:
-1. Clones mesh-llm from GitHub (`jd/feat/skippy` branch / PR #422)
+1. Clones mesh-llm from GitHub (`main` by default)
 2. Runs `scripts/prepare-llama.sh` to clone + patch llama.cpp
 3. Runs `scripts/build-llama.sh` to compile the C++ static libraries
 4. Runs `cargo build --release -p skippy-model-package` to build the Rust binary
 
 Total build time: ~5 minutes on cpu-xl (16 vCPU).
-Once PR #422 merges, set `MESH_LLM_REF=main` (or leave it — the default will be updated).
+Override `MESH_LLM_REF` only when you need to test a non-main mesh-llm branch.

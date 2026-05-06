@@ -23,8 +23,8 @@ TARGET_REPO="${3:?Usage: $0 <source_repo> <source_file> <target_repo> [model_id]
 QUANT_DIR="$(dirname "$SOURCE_FILE")"
 MODEL_ID="${4:-${SOURCE_REPO}:${QUANT_DIR}}"
 
-# Git ref for mesh-llm (PR #422 branch, switch to "main" once merged)
-MESH_LLM_REF="${MESH_LLM_REF:-jd/feat/skippy}"
+# Git ref for mesh-llm.
+MESH_LLM_REF="${MESH_LLM_REF:-main}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUCKET="meshllm/layer-split-output"
