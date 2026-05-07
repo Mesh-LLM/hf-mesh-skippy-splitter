@@ -168,41 +168,62 @@ except Exception:
 # Build variant name from source file path
 variant_name = model_id or source_file.split('/')[-1].replace('.gguf', '')
 
-# Check if this variant already exists
-existing_variant = None
-for v in entry.get("variants", []):
-    if v.get("curated", {}).get("name") == variant_name:
-        existing_variant = v
-        break
-
 package_entry = {
     "type": "layer-package",
     "repo": target_repo,
     "layer_count": layer_count,
 }
 
-if existing_variant:
-    # Update packages list
-    packages = existing_variant.get("packages", [])
-    # Remove existing layer-package for same repo if present
-    packages = [p for p in packages if p.get("repo") != target_repo]
-    packages.append(package_entry)
-    existing_variant["packages"] = packages
+# Handle both dict-style and list-style variants
+variants = entry.get("variants", {})
+if isinstance(variants, dict):
+    # Dict-keyed by variant name (existing catalog format)
+    if variant_name in variants:
+        packages = variants[variant_name].get("packages", [])
+        packages = [p for p in packages if p.get("repo") != target_repo]
+        packages.append(package_entry)
+        variants[variant_name]["packages"] = packages
+    else:
+        variants[variant_name] = {
+            "source": {
+                "repo": source_repo,
+                "file": source_file,
+                "revision": source_revision,
+            },
+            "curated": {
+                "name": variant_name,
+                "size": f"{layer_count} layers",
+                "description": f"Layer package for {model_id}",
+            },
+            "packages": [package_entry],
+        }
+    entry["variants"] = variants
 else:
-    # Add new variant
-    entry["variants"].append({
-        "source": {
-            "repo": source_repo,
-            "file": source_file,
-            "revision": source_revision,
-        },
-        "curated": {
-            "name": variant_name,
-            "size": f"{layer_count} layers",
-            "description": f"Layer package for {model_id}",
-        },
-        "packages": [package_entry],
-    })
+    # List-style (fallback)
+    existing_variant = None
+    for v in variants:
+        if v.get("curated", {}).get("name") == variant_name:
+            existing_variant = v
+            break
+    if existing_variant:
+        packages = existing_variant.get("packages", [])
+        packages = [p for p in packages if p.get("repo") != target_repo]
+        packages.append(package_entry)
+        existing_variant["packages"] = packages
+    else:
+        variants.append({
+            "source": {
+                "repo": source_repo,
+                "file": source_file,
+                "revision": source_revision,
+            },
+            "curated": {
+                "name": variant_name,
+                "size": f"{layer_count} layers",
+                "description": f"Layer package for {model_id}",
+            },
+            "packages": [package_entry],
+        })
 
 # Write and upload
 with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -221,9 +242,85 @@ print(f"    Variant: {variant_name}")
 print(f"    Package: {target_repo} ({layer_count} layers)")
 PYTHON
 
+# ─── Model Card ────────────────────────────────────────────────────────────
+echo ""
+echo "=== [8/9] Uploading model card ==="
+ACTIVATION_WIDTH=$(python3 -c "import json; m=json.load(open('/tmp/package/model-package.json')); print(m.get('activation_width', 'unknown'))")
+
+cat > /tmp/README.md << EOF
+---
+library_name: mesh-llm
+base_model: ${SOURCE_REPO}
+tags:
+- mesh-llm
+- layer-package
+- skippy
+- distributed-inference
+---
+
+# ${MODEL_ID} — Layer Package for Mesh LLM
+
+Pre-split layer package for distributed inference with [Mesh LLM](https://github.com/Mesh-LLM/mesh-llm).
+
+**Source model:** [${SOURCE_REPO}](https://huggingface.co/${SOURCE_REPO})
+
+## Details
+
+| Property | Value |
+|---|---|
+| **Source** | [${SOURCE_REPO}](https://huggingface.co/${SOURCE_REPO}) |
+| **Source file** | \`${SOURCE_FILE}\` |
+| **Layers** | ${LAYER_COUNT} |
+| **Total size** | ${TOTAL_SIZE} |
+| **Activation width** | ${ACTIVATION_WIDTH} |
+| **Format** | Per-layer GGUF (layer-package) |
+
+## Usage
+
+\`\`\`bash
+# Each node downloads only its assigned layers:
+mesh-llm serve --model "hf://${TARGET_REPO}" --split
+\`\`\`
+
+Nodes discover each other on the local network, plan the topology based on available RAM, and each downloads only its portion.
+
+## Structure
+
+\`\`\`
+model-package.json          # Manifest (layer count, checksums, metadata)
+shared/metadata.gguf        # Model metadata & vocabulary
+shared/embeddings.gguf      # Token embedding weights
+shared/output.gguf          # Output head weights
+layers/layer-000.gguf       # Per-layer transformer weights
+layers/layer-001.gguf
+...
+layers/layer-$(printf "%03d" $((LAYER_COUNT - 1))).gguf
+\`\`\`
+
+## Links
+
+- **Source model:** [${SOURCE_REPO}](https://huggingface.co/${SOURCE_REPO})
+- [Mesh LLM](https://github.com/Mesh-LLM/mesh-llm) — distributed inference runtime
+- [Splitter tool](https://github.com/Mesh-LLM/hf-mesh-skippy-splitter) — HF Jobs layer splitter
+- [Model catalog](https://huggingface.co/datasets/meshllm/catalog) — registry of available packages
+EOF
+
+/tmp/venv/bin/python3 -c "
+from huggingface_hub import HfApi
+import os
+api = HfApi(token=os.environ['HF_TOKEN'])
+api.upload_file(
+    path_or_fileobj='/tmp/README.md',
+    path_in_repo='README.md',
+    repo_id=os.environ['TARGET_REPO'],
+    repo_type='model',
+)
+print('  ✓ Model card uploaded')
+"
+
 # ─── Summary ──────────────────────────────────────────────────────────────
 echo ""
-echo "=== [8/8] Done ==="
+echo "=== [9/9] Done ==="
 echo ""
 echo "  Published:  https://huggingface.co/${TARGET_REPO}"
 echo "  Layers:     ${LAYER_COUNT}"
